@@ -1,36 +1,14 @@
-import webdataset as wds
-from PIL import Image
-import io
-import matplotlib.pyplot as plt
-import os
-import json
-
-from warnings import filterwarnings
-
-
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"    # choose GPU if you are on a multi GPU server
-import numpy as np
-import torch
-import pytorch_lightning as pl
-import torch.nn as nn
-from torchvision import datasets, transforms
-import tqdm
-
-from os.path import join
-from datasets import load_dataset
-import pandas as pd
-from torch.utils.data import Dataset, DataLoader
-import json
-
 import clip
-
-
-from PIL import Image, ImageFile
-
+import pytorch_lightning as pl
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from PIL import Image
 
 #####  This script will predict the aesthetic score for this image file:
 
-img_path = "test.jpg"
+img_path = "/Users/iankonradjohnson/Downloads/test-images/Screenshot 2025-05-03 at 11.14.27 PM.png"
 
 
 
@@ -91,15 +69,22 @@ def normalized(a, axis=-1, order=2):
 
 model = MLP(768)  # CLIP embedding dim is 768 for CLIP ViT L 14
 
-s = torch.load("sac+logos+ava1-l14-linearMSE.pth")   # load the model you trained previously or the model available in this repo
+# Check for MPS (Apple Silicon), CUDA, or fall back to CPU
+if torch.backends.mps.is_available():
+    device = "mps"
+elif torch.cuda.is_available():
+    device = "cuda"
+else:
+    device = "cpu"
+print(f"Using device: {device}")
+
+# Load the model with appropriate device mapping
+s = torch.load("sac+logos+ava1-l14-linearMSE.pth", map_location=torch.device(device))   # load the model you trained previously or the model available in this repo
 
 model.load_state_dict(s)
 
-model.to("cuda")
+model.to(device)
 model.eval()
-
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
 model2, preprocess = clip.load("ViT-L/14", device=device)  #RN50x64   
 
 
@@ -114,7 +99,16 @@ with torch.no_grad():
 
 im_emb_arr = normalized(image_features.cpu().detach().numpy() )
 
-prediction = model(torch.from_numpy(im_emb_arr).to(device).type(torch.cuda.FloatTensor))
+tensor_input = torch.from_numpy(im_emb_arr).to(device)
+# Use the appropriate tensor type based on device
+if device == "cuda":
+    tensor_input = tensor_input.type(torch.cuda.FloatTensor)
+elif device == "mps":
+    tensor_input = tensor_input.type(torch.FloatTensor).to(device)  # Explicitly move to MPS device
+else:
+    tensor_input = tensor_input.type(torch.FloatTensor)
+    
+prediction = model(tensor_input)
 
 print( "Aesthetic score predicted by the model:")
 print( prediction )
